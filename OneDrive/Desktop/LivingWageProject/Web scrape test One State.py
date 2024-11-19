@@ -40,7 +40,7 @@ def ProcessLivingWagesState(state_name,state_id):
         headers = ['Wage Type']  # Start with Wage Type as the first column
 
         for top, sub in zip(top_headers,sub_headers):
-            headers.append(f'{top} - {sub}')
+            headers.append(f'{top} - {sub}')\
         del headers[1]
         headers.extend(["county_name","county_id"])
 
