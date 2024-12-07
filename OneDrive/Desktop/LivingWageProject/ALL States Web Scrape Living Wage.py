@@ -1,3 +1,8 @@
+""""
+ONLY WORKS IF FILE ALREADY THERE, PROBLEMS WITH APPENDING STILL
+"""
+
+
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -8,14 +13,15 @@ def ProcessLivingWagesState(counties_id_info):
     """
     Process a State and Manage CSV Data File
     """
- 
+    print(counties_id_info)
     # Base URL for the counties
     base_url = 'https://livingwage.mit.edu/counties/'
     # Send a request to the server
     # List to store the dfs
     all_dfs = []
     # Loop through the list of counties
-    for county_name, county_id in counties_id_info.items():
+    # Loop through the counties in the DataFrame using zip
+    for county_name, county_id in zip(counties_id_info['county_name'], counties_id_info['county_id']):
         # Construct the full URL for each county
         url = f'{base_url}{county_id}'
         # Send an HTTP request to the URL
@@ -28,7 +34,7 @@ def ProcessLivingWagesState(counties_id_info):
             # Within this div, find the table
             table = table_div.find('table', class_='results_table table-striped')
 
-        headers = extractHeaders(table)
+        #headers = extractHeaders(table)
         one_county_rows = []
         for tr in table.find_all('tbody')[0].find_all('tr'):
             row = [tr.find('td', {'class':'wage_title'}).get_text(strip=True)]
@@ -37,15 +43,15 @@ def ProcessLivingWagesState(counties_id_info):
             row.extend([county_name, county_id])
             one_county_rows.append(row)
 
-        county_rows = pd.DataFrame(one_county_rows, columns=headers)
-        ##Each individual county dataframe
-        #print(one_county_rows)
+            county_rows = pd.DataFrame(one_county_rows)
+            ##Each individual county dataframe
+            #print(one_county_rows)
         all_dfs.append(county_rows)
         # Concatenate all DataFrames into a single DataFrame
         combined_df = pd.concat(all_dfs, ignore_index=True)
-        print(combined_df)
+        print('COMBINED DF: ',combined_df)
         return combined_df
-      
+        
     #combined_df.to_csv('C:\Users\CeciliaNguyen\OneDrive - Futuro Health O365\Desktop\AllStates DF LivingWageWebScrape (Cleaned).csv')
     #combined_df.to_csv(f'C:\Users\cecil\OneDrive\Desktop\LivingWageProject\{state_name}_{state_id}')
 
@@ -111,81 +117,86 @@ def getCountyID(state_id):
                 county_url = county_url.replace('/counties/','')
                 county_dict[county_name] =  county_url
 
-        print(county_dict)
-        return county_dict
+        #print(county_dict)
+        
+        # Convert dictionary to DataFrame
+        county_df = pd.DataFrame.from_dict(county_dict, orient='index', columns=['county_id']).reset_index()
+
+        # Rename the index column
+        county_df.rename(columns={'index': 'county_name'}, inplace=True)
+        #changed to DataFrame
+        return county_df
 
 
-def extractHeaders(table):
-         #Extract top-level headers (1 Adult, 2 Adults (1 Working), etc.)
-        top_headers = []
-        for th in table.find_all('thead')[0].find_all('th'):
-            # Extend each top header across its colspan
-            colspan = int(th.get('colspan',1))
-            top_headers.extend([th.get_text(strip=True).replace('\xa0',' ')]* colspan)
-
-        # Extract subheaders (0 Children, 1 Child, etc.)
-        sub_headers = []
-        for th in table.find_all('thead')[1].find_all('td'):
-            sub_headers.append(th.get_text(strip=True).replace('\xa0',' '))
-        # Combine the two header levels
-        headers = ['Wage Type']  # Start with Wage Type as the first column
-        for top, sub in zip(top_headers,sub_headers):
-            headers.append(f'{top} - {sub}')
-        del headers[1]
-        return headers.extend(["county_name","county_id"])
 
 #COMPLETE SAVE CSV
-def saveStateCountyLivingWage(state_name, state_id, county_dict):
+def saveStateCountyLivingWage(state_name, state_id, county_df):
     """Save Dataframe to CSV, appending if file exists"""
     # Define the full file path
-    save_dir = "C:/Users/cecil/OneDrive/Desktop/LivingWageProject"
+    save_dir = "C:/Users/cecil/OneDrive/Desktop/LivingWageProject/"
     file_name = os.path.join(save_dir, f'{state_name}_{state_id}_LivingWage.csv')
     
     # Check if the file exists; write or append accordingly
     if os.path.exists(file_name):
-        # Load existing CSV file
-        curr_df = pd.read_csv(file_name)
-        #print('curr df:', curr_df)
-        # Calculate expected rows based on the number of counties
-        expected_rows = len(county_dict) * 3 # 3 rows per county
-        
-        # Check if row count is as expected
-        if len(curr_df) == expected_rows:
-            print(f"{state_name} CSV file already has the correct number of rows.")
-            return  # No further action needed if data is complete
-        elif len(curr_df) != expected_rows:
-            # Handle incomplete data
-            print(f"{state_name} CSV file has incomplete data. Expected {expected_rows} rows, found {len(curr_df)} rows.")
+        with open(file_name, 'r') as filename:
+            # Load existing CSV file
+            curr_df = pd.read_csv(file_name)
+            print('CURR DF: \n', curr_df)
+            # Calculate expected rows based on the number of counties
+            expected_rows = len(county_dict) * 3 # 3 rows per county
             
-            # Identify the last processed county
-            last_county= curr_df[['county_name','county_id']].iloc[-1]
-            print(f"Continuing from last county: {last_county}")
-            #FIX THIS LOGIC!
-            # Filter the new DataFrame to avoid duplicates
-            # Identify the set of processed county IDs
-            processed_county_ids = set(curr_df['county_id'].unique())
-            
-            # Filter out processed counties from county_dict
-            remaining_counties_dict = {k: v for k, v in county_dict.items() if v not in processed_county_ids}
-            #Create Dataframe of remaining counties
-            remaining_counties_df = ProcessLivingWagesState(remaining_counties_dict)
-            
-            # Concatenate the original DataFrame with the remaining counties DataFrame
-            combined_df = pd.concat([curr_df, remaining_counties_df], ignore_index=True)
-            
-            # Save the combined DataFrame to CSV, overwriting the original file
-            combined_df.to_csv(file_name, index=False)
-            print(f"Appended data for remaining counties in {state_name} and saved to {file_name}.")
+            # Check if row count is as expected
+            if len(curr_df) == expected_rows:
+                print(f"{state_name} CSV file already has the correct number of rows.")
+                return  # No further action needed if data is complete
+            elif len(curr_df) < expected_rows:
+                # Handle incomplete data
+                print(f"{state_name} CSV file has incomplete data. Expected {expected_rows} rows, found {len(curr_df)} rows.")
+                
+                # Identify the last processed county
+                last_county= curr_df[['county_name']].iloc[-1]
+
+                #If last row of county isn't fully 3
+                print(f"Continuing from last county: {last_county}")
+                #FIX THIS LOGIC!
+                # Filter the new DataFrame to avoid duplicates
+                # Identify the set of processed county IDs
+                #processed_county_ids = set(curr_df['county_id'].unique())
+                
+                #ERROR NOT DATAFRAME
+                print ('COUNTY DF :\n', county_df)
+                # Filter out processed counties from county_dict
+                #ACTUALLY WANT DATAFRAME OF COUNTY NAME AND ID, TO PROCESS
+                remaining_counties_df = county_df[~county_df['county_name'].isin(curr_df['county_name'])].dropna()
+                remaining_counties_df = pd.DataFrame(remaining_counties_df)
+                print(f'Remaining Counties: \n {remaining_counties_df}')
+                #Create Dataframe of remaining counties, including headers
+                remaining_counties_df = ProcessLivingWagesState(remaining_counties_df)
+                remaining_counties_df.columns = ['Wage Type', '1 ADULT - 0 Children', '1 ADULT - 1 Child', '1 ADULT - 2 Children', '1 ADULT - 3 Children', '2 ADULTS(1 WORKING) - 0 Children',
+                                                 	'2 ADULTS(1 WORKING) - 1 Child', '2 ADULTS(1 WORKING) - 2 Children', '2 ADULTS(1 WORKING) - 3 Children', '2 ADULTS(BOTH WORKING) - 0 Children',
+                                                    '2 ADULTS(BOTH WORKING) - 1 Child', '2 ADULTS(BOTH WORKING) - 2 Children', '2 ADULTS(BOTH WORKING) - 3 Children','county_name', 'county_id']
+                # Concatenate the original DataFrame with the remaining counties DataFrame
+                combined_df = pd.concat([curr_df, remaining_counties_df],axis = 0)
+                
+                #Include Headers for Correct Appending
+                
+                # Save the combined DataFrame to CSV, overwriting the original file
+                combined_df.to_csv(file_name, columns = remaining_counties_df.columns, index=False)
+                print(f"Appended data for remaining counties in {state_name} and saved to {file_name}.")
+                return combined_df
+
+            elif len(curr_df) < expected_rows:
+                print("There's Extra Rows, Please Look Over File")
     else:
         print(f"No existing file for {state_name}. Creating a new CSV file.")
-        new_state_df = ProcessLivingWagesState(county_dict)
+        new_state_df = ProcessLivingWagesState(county_df)
         new_state_df.to_csv(file_name, index=False)
 
 #Make sure tom check if last three rows is county, if not, then replace that county's all 3 rows.
 ##TO-DO: Make sure ids ascending
 #state_id_info = getStateID(url)
 #counties_id_info = getCountyID(state_dict)
-""""
+""""print()
 #Iterate through States
 for state_name, state_id in state_id_info.items():
     final_county_df_state = ProcessLivingWagesState(state_name,state_id)
@@ -227,15 +238,16 @@ for state_name, state_id in state_dict.items():
         ---INCLUDE SAVE TO CSV, CHECKING IF FILES ARE THERE
 
         saveStateCountyLivingWage('CA', '06')
+FIX ISSUE: Append the right dataframe/county Living Wage Entry
 """
 
 
   
 for state_name, state_id in state_dict.items():
       # Skip states with more than 500 counties
-    county_dict = getCountyID(state_id)
-    if len(county_dict) >= 300:
+    county_df = getCountyID(state_id)
+    if len(county_df) >= 300:
         print(f"Skipping {state_name} ({state_id}) - too many counties: {len(county_dict)}.")
     else:
         print(f'Making DataFrame for {state_name}')
-        saveStateCountyLivingWage(state_name, state_id, county_dict)
+        saveStateCountyLivingWage(state_name, state_id, county_df)
